@@ -57,6 +57,8 @@ def prepare_data_static(**kargs):
                     # cast to supported types, note that np.int32 limit is 2,147,483,647 
                     # - so unless we have a tokenizer that exceeds this, it should be ok
                     tokens = np.array(mmap_dataset.get(idx), dtype=np.int32)
+                    # binidx doesn't support multi-dimensional data so we unfold
+                    tokens = tokens.reshape(-1, kargs["multitoken_width"])
                     yield {
                         'input_ids': tokens,
                         'token_type_ids': [0] * len(tokens),
@@ -522,7 +524,9 @@ class RWKVDataModule(LightningDataModule):
         # prompt/completion format masking support
         disable_prompt_completion_mask: bool = False,
         # Skip database setup checks if datapath exists, ignored if using preload_datapath.py
-        skip_datapath_setup: bool = False
+        skip_datapath_setup: bool = False,
+        # for binidx only
+        multitoken_width: int = 1,
     ):
         # Capture the init parameters
         self._init_locals = locals()

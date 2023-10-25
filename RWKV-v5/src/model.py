@@ -28,6 +28,12 @@ from torch.utils.cpp_extension import load
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CUDA_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../cuda"))
 
+# [TODO] These should really be config params
+MULTITOKEN_RANGES = tuple(
+    (i*1024, (i+1)*1024) for i in range(37)
+)
+PADDING_IDX = 2**16-1
+
 ########################################################################################################
 # JIT / torch compile special handling
 ########################################################################################################
@@ -633,7 +639,7 @@ class RWKV(L.LightningModule):
         if torch_set_float32_matmul_precision is not None:
             torch.set_float32_matmul_precision(torch_set_float32_matmul_precision)
 
-        self.emb = nn.Embedding(vocab_size, n_embd)
+        self.emb = nn.EmbeddingBag(vocab_size, n_embd, padding_idx=PADDING_IDX)
 
         # load(name=f"wkv_{self.ctx_len}_bf16",
         #      sources=[
@@ -896,10 +902,10 @@ class RWKV(L.LightningModule):
     @TCompileBaseline
     def forward(self, idx: torch.Tensor, last_shift_states: torch.Tensor = None,
                 last_wkv_states: torch.Tensor = None):
-        B, T = idx.size()
+        B, T, _ = idx.size()
         assert T <= self.ctx_len, "Cannot forward, model ctx_len is exhausted."
 
-        x = self.emb(idx)
+        x = torch.stack([self.emb(batch_) for batch_ in idx])
 
         # Handle dropout (input)
         if self.dropout > 0.0:
@@ -987,7 +993,7 @@ class RWKV(L.LightningModule):
     #
     def compute_loss(self, batch, batch_idx, is_training_run: bool):
         seq = batch['input_ids']
-        assert isinstance(seq, torch.Tensor) and seq.ndim == 2
+        assert isinstance(seq, torch.Tensor) and seq.ndim == 3
         ori_seq_mask = batch['attention_mask']
 
         # Check if attent mask is set, if not initialize it
@@ -1045,27 +1051,36 @@ class RWKV(L.LightningModule):
                     seq_mask = seq_mask[:, :pos + len_cut + 1]
                     # Set the attention mask to 0 for the skipped tokens
                     seq_mask[:, :pos] = 0
+                    # Ignore padding tokens
+                    seq_mask[..., seq_mask == PADDING_IDX] = 0
                     break
                 prev_step = step
                 
         do_bptt_learning = self.bptt_learning and is_training_run
         idx, targets = seq[:, :-1], seq[:, 1:]
 
-        B, T = idx.shape
+        B, T, _ = idx.shape
         C = self.n_embd
         total_mask_sum = torch.sum(seq_mask)
 
         # If total_mask_sum, we skip, as there is no tokens of value to learn from anyway
         if total_mask_sum == 0:
             return 0
+
+        def multi_cross_entropy(input, target, *args, **kwargs):
+            target = target.permute(2, 0, 1)
+            return sum([F.cross_entropy(input[..., r[1][0]:r[1][1]],
+                                        (target[r[0]].view(-1) - r[1][0]) % (r[1][1] - r[1][0]), # TODO how to better prevent overflow due to padding_idx
+                                        *args, **kwargs)
+                        for r in enumerate(MULTITOKEN_RANGES)])
         
         def checkpointed_step(idx, targets, mask, prev_loss, last_shift_states,
                               last_wkv_states, prev_steps):
             logits, new_shift_states, new_wkv_states = self(
                 idx, last_shift_states, last_wkv_states)
             
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)),
-                                    targets.view(-1),
+            loss = multi_cross_entropy(logits.view(-1, logits.size(-1)),
+                                    targets,
                                     reduction="none")
 
             submask = mask.view(-1)[:loss.shape[0]]
