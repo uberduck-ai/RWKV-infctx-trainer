@@ -28,12 +28,6 @@ from torch.utils.cpp_extension import load
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 CUDA_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../cuda"))
 
-# [TODO] These should really be config params
-MULTITOKEN_RANGES = tuple(
-    (i*1024, (i+1)*1024) for i in range(37)
-)
-PADDING_IDX = 2**16-1
-
 ########################################################################################################
 # JIT / torch compile special handling
 ########################################################################################################
@@ -485,7 +479,7 @@ class L2Wrap(torch.autograd.Function):
         maxx, ids = torch.max(y, -1, keepdim=True)
         gy = torch.zeros_like(y)
         gy.scatter_(-1, ids, maxx * factor)
-        gy = gy * ctx.currentMask[:, None][None, :]
+        gy = gy * ctx.currentMask.reshape(y.shape[0], y.shape[1], y.shape[2], 1)
         return (grad_output, gy, None, None)
 
 ########################################################################################################
@@ -509,6 +503,7 @@ class RWKV(L.LightningModule):
                  n_embd: int = -1,
                  n_layer: int = -1,
                  vocab_size: int = -1,
+                 n_channel: int = -1,
                  # Context length size for the model
                  ctx_len: int = 2048,
                  # Context length schedule
@@ -582,10 +577,18 @@ class RWKV(L.LightningModule):
             n_layer = max_block_id + 1
 
         if n_embd < 0:
-            n_embd = model_weights['head.weight'].shape[1]
+            n_embd = model_weights['head.0.weight'].shape[1]
         
         if vocab_size < 0:
-            vocab_size = model_weights['head.weight'].shape[0]
+            vocab_size = model_weights['head.0.weight'].shape[0]
+        
+        if n_channel < 0:
+            max_channel_id = 0
+            for x in model_keys:
+                if 'head.' in x:
+                    channel_id = int(x.split('.')[1])
+                    max_channel_id = max(max_channel_id, channel_id)
+            n_channel = max_channel_id + 1
 
         # Save the various other params for later
         self.ctx_len = ctx_len
@@ -594,6 +597,7 @@ class RWKV(L.LightningModule):
         self.n_embd = n_embd
         self.n_layer = n_layer
         self.vocab_size = vocab_size
+        self.n_channel = n_channel
         self.layerwise_lr = layerwise_lr
         self.grad_cp = grad_cp
         self.lr_init = lr_init
@@ -639,7 +643,7 @@ class RWKV(L.LightningModule):
         if torch_set_float32_matmul_precision is not None:
             torch.set_float32_matmul_precision(torch_set_float32_matmul_precision)
 
-        self.emb = nn.EmbeddingBag(vocab_size, n_embd, padding_idx=PADDING_IDX)
+        self.emb = nn.ModuleList([nn.Embedding(vocab_size, n_embd) for _ in range(n_channel)])
 
         # load(name=f"wkv_{self.ctx_len}_bf16",
         #      sources=[
@@ -660,7 +664,7 @@ class RWKV(L.LightningModule):
         ])
 
         self.ln_out = nn.LayerNorm(n_embd)
-        self.head = nn.Linear(n_embd, vocab_size, bias=False)
+        self.head = nn.ModuleList([nn.Linear(n_embd, vocab_size, bias=False) for _ in range(n_channel)])
 
         # Dropout handling
         if dropout > 0:
@@ -902,10 +906,11 @@ class RWKV(L.LightningModule):
     @TCompileBaseline
     def forward(self, idx: torch.Tensor, last_shift_states: torch.Tensor = None,
                 last_wkv_states: torch.Tensor = None):
-        B, T, _ = idx.size()
+        B, T, H = idx.size()
         assert T <= self.ctx_len, "Cannot forward, model ctx_len is exhausted."
+        assert H == self.n_channel, f"Got {H} channels, expected {self.n_channel}."
 
-        x = torch.stack([self.emb(batch_) for batch_ in idx])
+        x = sum([self.emb[h](idx[:, :, h]) for h in range(H)])
 
         # Handle dropout (input)
         if self.dropout > 0.0:
@@ -943,8 +948,7 @@ class RWKV(L.LightningModule):
             new_states[i] = new_state
 
         x = self.ln_out(x)
-
-        x = self.head(x)
+        x = torch.stack([self.head[i](x) for i in range(self.n_channel)], dim=2)
 
         return x, new_states.shift_states, new_states.wkv_states
 
@@ -997,7 +1001,7 @@ class RWKV(L.LightningModule):
         ori_seq_mask = batch['attention_mask']
 
         # Check if attent mask is set, if not initialize it
-        if ori_seq_mask is None or ori_seq_mask.ndim != 2:
+        if ori_seq_mask is None or ori_seq_mask.ndim != 3:
             ori_seq_mask = torch.ones_like(seq[:, 1:])
 
         # Get the starting and ending loss bias
@@ -1051,36 +1055,27 @@ class RWKV(L.LightningModule):
                     seq_mask = seq_mask[:, :pos + len_cut + 1]
                     # Set the attention mask to 0 for the skipped tokens
                     seq_mask[:, :pos] = 0
-                    # Ignore padding tokens
-                    seq_mask[..., seq_mask == PADDING_IDX] = 0
                     break
                 prev_step = step
                 
         do_bptt_learning = self.bptt_learning and is_training_run
         idx, targets = seq[:, :-1], seq[:, 1:]
 
-        B, T, _ = idx.shape
+        B, T, H = idx.shape
         C = self.n_embd
         total_mask_sum = torch.sum(seq_mask)
 
         # If total_mask_sum, we skip, as there is no tokens of value to learn from anyway
         if total_mask_sum == 0:
             return 0
-
-        def multi_cross_entropy(input, target, *args, **kwargs):
-            target = target.permute(2, 0, 1)
-            return sum([F.cross_entropy(input[..., r[1][0]:r[1][1]],
-                                        (target[r[0]].view(-1) - r[1][0]) % (r[1][1] - r[1][0]), # TODO how to better prevent overflow due to padding_idx
-                                        *args, **kwargs)
-                        for r in enumerate(MULTITOKEN_RANGES)])
         
         def checkpointed_step(idx, targets, mask, prev_loss, last_shift_states,
                               last_wkv_states, prev_steps):
             logits, new_shift_states, new_wkv_states = self(
                 idx, last_shift_states, last_wkv_states)
             
-            loss = multi_cross_entropy(logits.view(-1, logits.size(-1)),
-                                    targets,
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1)),
+                                    targets.view(-1),
                                     reduction="none")
 
             submask = mask.view(-1)[:loss.shape[0]]
@@ -1093,11 +1088,11 @@ class RWKV(L.LightningModule):
             return new_loss, new_shift_states, new_wkv_states, new_steps
 
         total_loss = torch.tensor(
-            0, dtype=self.emb.weight.dtype).requires_grad_()
+            0, dtype=self.emb[0].weight.dtype).requires_grad_()
         steps = 0
         states = BlockStateList.create(self.n_layer, B, C, 
                                        self.n_head, self.head_size,
-                                       seq.device, self.emb.weight.dtype)
+                                       seq.device, self.emb[0].weight.dtype)
         segment_count = math.ceil(T / self.ctx_len)
 
         #
@@ -1137,8 +1132,8 @@ class RWKV(L.LightningModule):
             # (this only applies for segmented learning)
             segment_size = min(math.ceil(T / segment_count), self.ctx_len)
 
-            # Dummy 2D tenros of shape [1,1], are used to do "dummy checkpoint/forward/backprop" to keep everything in sync
-            dummy_2d_zero = torch.tensor([[0]], dtype=torch.long, device=cur_device)
+            # Dummy 3D tenros of shape [1,1,1], are used to do "dummy checkpoint/forward/backprop" to keep everything in sync
+            dummy_3d_zero = torch.tensor([[[0]]], dtype=torch.long, device=cur_device)
 
             # Get the max segment count across all GPUs, in the current batch, which is used to keep all devices are in sync
             # Once a thread has completed all its segments, it will do dummy checkpoint/forward/backprop with one token,
@@ -1218,16 +1213,16 @@ class RWKV(L.LightningModule):
                     cur_tar = targets[:, i * segment_size:(i + 1) * segment_size]
                     cur_msk = seq_mask[:, i * segment_size:(i + 1) * segment_size]
                 else:
-                    cur_idx = dummy_2d_zero
-                    cur_tar = dummy_2d_zero
-                    cur_msk = dummy_2d_zero
+                    cur_idx = dummy_3d_zero
+                    cur_tar = dummy_3d_zero
+                    cur_msk = dummy_3d_zero
 
                 # Segmented learning, applies the forward/pass over each chunk seperately
                 segment_loss, new_shift_states, new_wkv_states, steps = checkpointed_step(
                     cur_idx,
                     cur_tar,
                     cur_msk,
-                    torch.tensor(0, dtype=self.emb.weight.dtype, device=cur_device).requires_grad_(True),
+                    torch.tensor(0, dtype=self.emb[0].weight.dtype, device=cur_device).requires_grad_(True),
                     prv_shift_states,
                     prv_wkv_states,
                     steps,
@@ -1435,7 +1430,8 @@ class SimpleRWKV():
             world_tokenizer = MT_TRIE_TOKENIZER(os.path.join(SCRIPT_DIR, "./dataflow/rwkv_vocab_v20230424.txt"))
             self.worldTokenizer = world_tokenizer
         else:
-            raise NotImplementedError(f"Unsupported vocab size ({vocab_size}) - custom tokenizer not supported")
+            #raise NotImplementedError(f"Unsupported vocab size ({vocab_size}) - custom tokenizer not supported")
+            pass
 
     # Encoding strings
     def encode(self, text: str):
@@ -1523,24 +1519,28 @@ class SimpleRWKV():
 
         # Apply token ban
         for x in token_ban:
-            logits[x] = max_neg
+            for y in x:
+                logits[x][y] = max_neg
         
         # Remove NaNs from logits
         for x in range(len(logits)):
-            if torch.isnan(logits[x]):
-                logits[x] = max_neg
+            for y in range(x):
+                if torch.isnan(logits[x][y]):
+                    logits[x][y] = max_neg
 
         # Handle sampling with temperature
         if temperature > 0.0:
-            probs = F.softmax(logits, dim=-1)
-            sorted_probs = torch.sort(probs, descending=True)[0]
-            cumulative_probs = torch.cumsum(sorted_probs, dim=-1).cpu().numpy()
-            cutoff = float(sorted_probs[np.argmax(cumulative_probs > top_p)])
-            probs[probs < cutoff] = 0
-            if temperature != 1.0:
-                probs = probs.pow(1.0 / temperature)
-            out = torch.multinomial(probs, num_samples=1)[0]
-            return out
+            out = []
+            for l in logits:
+                probs = F.softmax(l, dim=-1)
+                sorted_probs = torch.sort(probs, descending=True)[0]
+                cumulative_probs = torch.cumsum(sorted_probs, dim=-1).cpu().numpy()
+                cutoff = float(sorted_probs[np.argmax(cumulative_probs > top_p)])
+                probs[probs < cutoff] = 0
+                if temperature != 1.0:
+                    probs = probs.pow(1.0 / temperature)
+                out.append(torch.multinomial(probs, num_samples=1)[0])
+            return torch.Tensor(out)
         else: 
             # Since the tokenizer sample does not support temp==0
             # we handle this case ourself, by fining the top token

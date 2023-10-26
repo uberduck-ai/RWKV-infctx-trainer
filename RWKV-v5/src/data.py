@@ -58,11 +58,11 @@ def prepare_data_static(**kargs):
                     # - so unless we have a tokenizer that exceeds this, it should be ok
                     tokens = np.array(mmap_dataset.get(idx), dtype=np.int32)
                     # binidx doesn't support multi-dimensional data so we unfold
-                    tokens = tokens.reshape(-1, kargs["multitoken_width"])
+                    tokens = tokens.reshape(-1, kargs["n_channel"])
                     yield {
                         'input_ids': tokens,
-                        'token_type_ids': [0] * len(tokens),
-                        'attention_mask': [1] * len(tokens)
+                        'token_type_ids': [[0] * kargs["n_channel"]] * len(tokens),
+                        'attention_mask': [[1] * kargs["n_channel"]] * len(tokens)
                     }
 
             # Load the huggingface dataset from the generator
@@ -525,8 +525,9 @@ class RWKVDataModule(LightningDataModule):
         disable_prompt_completion_mask: bool = False,
         # Skip database setup checks if datapath exists, ignored if using preload_datapath.py
         skip_datapath_setup: bool = False,
-        # for binidx only
-        multitoken_width: int = 1,
+        
+        # multichannel i/o (for binidx only)
+        n_channel: int = 1,
     ):
         # Capture the init parameters
         self._init_locals = locals()

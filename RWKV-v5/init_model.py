@@ -4,7 +4,7 @@ import torch
 from src.model import RWKV 
 
 def init_model(
-        layers, embedding_size, vocab_size, output_model_path, 
+        layers, embedding_size, vocab_size, channels, output_model_path, 
         skip_if_exists=False, safe_init=False, emb_scale=0.0001
         # existing_model_path=None
         ):
@@ -13,7 +13,7 @@ def init_model(
     print(f'No of layers: {layers}')
     print(f'Embedding size: {embedding_size}')
     print(f'Output model path: {output_model_path}')
-    print(f'Vocab size: {vocab_size}')
+    print(f'Vocab size: {vocab_size}*{channels}')
     print(f'Emb scale: {emb_scale}')
     # print(f'Existing model path: {existing_model_path}')
     print(f'Note: this process takes a significant time (and ram) for large models')
@@ -37,6 +37,7 @@ def init_model(
     # this disable the loading of the init model file
     model = RWKV(n_layer=layers, 
                  n_embd=embedding_size, vocab_size=vocab_size, 
+                 n_channel=channels,
                  load_model=".//<#|=@%!$init_model$!%@=|#>//.",
                  ctx_len=1)
     
@@ -105,6 +106,7 @@ def main():
     parser.add_argument('--n_layer', type=int, help='Number of layers')
     parser.add_argument('--n_embd',  type=int, help='Embedding size')
     parser.add_argument('--vocab_size', type=str, help="Vocab size for the model as an int, alternativey use 'neox' or 'world' if using their respective tokenizer", default="neox")
+    parser.add_argument('--n_channel',  type=int, help='Number of channels')
     parser.add_argument('--skip-if-exists', type=bool, action=argparse.BooleanOptionalAction, default=False, help='Skip the init if the model already exists, enables --safe-init if set')
     parser.add_argument('--safe-init', type=bool, action=argparse.BooleanOptionalAction, default=False, help='Init in safe mode, where the model is first init as a tmp file, before overwritting/moving to the output path')
     parser.add_argument('--emb-scale', type=float, default=0.0001, help='Embedding weight scale, default is 0.0001')
@@ -126,7 +128,7 @@ def main():
         vocab_size = int(vocab_size)
 
     init_model(
-        args.n_layer, args.n_embd, vocab_size, args.output_model_path, 
+        args.n_layer, args.n_embd, vocab_size, args.n_channel, args.output_model_path, 
         skip_if_exists=args.skip_if_exists, safe_init=args.safe_init,
         emb_scale=args.emb_scale
     ) #, args.existing_model_path
