@@ -524,6 +524,9 @@ class RWKV(L.LightningModule):
                  adam_eps: float = 1.0e-08,
                  weight_decay: float = 0.01,
                  warmup_steps: int = -1,
+                 # multichannel settings
+                 loss_weighting_exponent: float = 1.0,
+                 loss_weighting_groups: int = 1,
                  # loss bias start
                  position_loss_bias: float = 1.0,
                  position_loss_bias_in_validation: bool = False,
@@ -606,6 +609,8 @@ class RWKV(L.LightningModule):
         self.lr_period_type = lr_period_type
         self.dropout = dropout
         self.warmup_steps = warmup_steps
+        self.loss_weighting_exponent = loss_weighting_exponent
+        self.loss_weighting_groups = loss_weighting_groups
         self.beta1 = beta1
         self.beta2 = beta2
         self.weight_decay = weight_decay
@@ -1074,9 +1079,15 @@ class RWKV(L.LightningModule):
             logits, new_shift_states, new_wkv_states = self(
                 idx, last_shift_states, last_wkv_states)
             
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)),
-                                    targets.view(-1),
+            loss = F.cross_entropy(logits.view(-1, logits.size(-1), logits.size(2)),
+                                    targets.view(-1, targets.size(2)),
                                     reduction="none")
+            loss_weighting = torch.tensor([
+                self.loss_weighting_exponent ** (i % (self.n_channel // self.loss_weighting_groups))
+                for i in range(self.n_channel)
+            ], device=logits.device)
+            loss = loss * loss_weighting
+            loss = loss.view(-1)
 
             submask = mask.view(-1)[:loss.shape[0]]
             submask_sum = torch.sum(submask)
