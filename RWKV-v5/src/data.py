@@ -17,6 +17,9 @@ SRC_DIR = os.path.dirname(os.path.realpath(__file__))
 from .dataflow.trie_tokenizer import world_tokenizer_encode
 import numpy as np
 
+# delay pattern
+import .delay_pattern
+
 # We have to extract out the prepare function to be "outside the class"
 # else it will not be hashed / serialized properly, and will produce the following error:
 #
@@ -363,6 +366,20 @@ def prepare_data_static(**kargs):
         # Get the newline token
         newline_tokenSet = encodeTokens(["\n"])
 
+        if kargs["delay_pattern_enable"]:
+            def apply_delay_pattern(x):
+                ret = {}
+                for i in [
+                    ("input_ids", kargs["delay_pattern_padding"]),
+                    ("token_type_ids", 0),
+                    ("attention_mask", 0),
+                ]:
+                    ret[i[0]] = delay_pattern.apply(x[i[0]], kargs["delay_pattern_groups"], i[1])
+                return ret
+            src_dataset = src_dataset.map(apply_delay_pattern, batched=True, 
+                                        batch_size=kargs["text_rechunk_size"]*10,
+                                        num_proc=num_cpus)
+
         # See if rechunking is needed, this is useful mostly for "text" based datasets
         # where we would need to split them into "digestable" context length sizes 
         # used for foundation training
@@ -528,6 +545,11 @@ class RWKVDataModule(LightningDataModule):
         
         # multichannel i/o (for binidx only)
         n_channel: int = 1,
+        
+        # other multichannel
+        delay_pattern_enable: bool = False,
+        delay_pattern_groups: int = 1,
+        delay_pattern_padding: int = 1024,
     ):
         # Capture the init parameters
         self._init_locals = locals()
