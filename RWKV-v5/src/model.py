@@ -620,6 +620,8 @@ class RWKV(L.LightningModule):
         self.bptt_truncated_learning = bptt_truncated_learning
         self.substep_cuda_cache_clear = substep_cuda_cache_clear
         self.substep_logging = substep_logging
+        
+        self.padding_idx = vocab_size
 
         # Save the position loss params
         self.position_loss_bias = position_loss_bias
@@ -648,7 +650,10 @@ class RWKV(L.LightningModule):
         if torch_set_float32_matmul_precision is not None:
             torch.set_float32_matmul_precision(torch_set_float32_matmul_precision)
 
-        self.emb = nn.ModuleList([nn.Embedding(vocab_size, n_embd) for _ in range(n_channel)])
+        self.emb = nn.ModuleList([
+            nn.Embedding(vocab_size + 1, n_embd, padding_idx=self.padding_idx)
+            for _ in range(n_channel)
+        ])
 
         # load(name=f"wkv_{self.ctx_len}_bf16",
         #      sources=[
@@ -1028,7 +1033,7 @@ class RWKV(L.LightningModule):
             seq_mask_index = ori_seq_mask[0] > 0
 
             # Apply the bias mask only to positive seq_mask values
-            final_mask = torch.zeros(ori_seq_mask.shape[1], device=ori_seq_mask.device)
+            final_mask = torch.zeros(ori_seq_mask.shape[1:], device=ori_seq_mask.device)
             final_mask[seq_mask_index] = ori_seq_mask[0][seq_mask_index] * bias_mask
 
             # And save it as seq_mask
@@ -1081,7 +1086,7 @@ class RWKV(L.LightningModule):
             
             loss = F.cross_entropy(logits.view(-1, logits.size(-1), logits.size(2)),
                                     targets.view(-1, targets.size(2)),
-                                    reduction="none")
+                                    reduction="none", ignore_index=self.padding_idx)
             loss_weighting = torch.tensor([
                 self.loss_weighting_exponent ** (i % (self.n_channel // self.loss_weighting_groups))
                 for i in range(self.n_channel)
