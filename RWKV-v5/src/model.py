@@ -483,6 +483,21 @@ class L2Wrap(torch.autograd.Function):
         return (grad_output, gy, None, None)
 
 ########################################################################################################
+# Extras
+########################################################################################################
+
+class TokenDropoutWithCorruption(nn.Module):
+    def __init__(self, p, vocab_size):
+        super(TokenDropoutWithCorruption, self).__init__()
+        self.dropout = nn.Dropout(p)
+        self.vocab_size = vocab_size
+    
+    def forward(self, x):
+        mask = torch.rand(x.size()) > self.p
+        indices = mask.nonzero(as_tuple=True)
+        return torch.where(mask, x, torch.randint_like(x, 0, vocab_size))
+
+########################################################################################################
 # Static optimized functions
 ########################################################################################################
 
@@ -518,6 +533,7 @@ class RWKV(L.LightningModule):
                  lr_period_type: str = 'epoch',
                  # Dropout rate
                  dropout: float = 0.0,
+                 input_corruption: float = 0.0,
                  # Adam optimizer settings
                  beta1: float = 0.9,
                  beta2: float = 0.99,
@@ -608,6 +624,7 @@ class RWKV(L.LightningModule):
         self.lr_period = lr_period
         self.lr_period_type = lr_period_type
         self.dropout = dropout
+        self.input_corruption = input_corruption
         self.warmup_steps = warmup_steps
         self.loss_weighting_exponent = loss_weighting_exponent
         self.loss_weighting_groups = loss_weighting_groups
@@ -679,6 +696,8 @@ class RWKV(L.LightningModule):
         # Dropout handling
         if dropout > 0:
             self.drop0 = nn.Dropout(p = dropout)
+        if input_corruption > 0:
+            self.corruption0 = TokenDropoutWithCorruption(p = input_corruption)
 
         # load the state, and GC the original cpu copy
         if model_weights != None:
@@ -919,7 +938,10 @@ class RWKV(L.LightningModule):
         B, T, H = idx.size()
         assert T <= self.ctx_len, "Cannot forward, model ctx_len is exhausted."
         assert H == self.n_channel, f"Got {H} channels, expected {self.n_channel}."
-
+        
+        if self.input_corruption > 0.0:
+            x = self.corruption0(x)
+        
         x = sum([self.emb[h](idx[:, :, h]) for h in range(H)])
 
         # Handle dropout (input)
