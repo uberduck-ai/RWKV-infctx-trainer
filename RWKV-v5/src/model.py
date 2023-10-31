@@ -489,13 +489,12 @@ class L2Wrap(torch.autograd.Function):
 class TokenDropoutWithCorruption(nn.Module):
     def __init__(self, p, vocab_size):
         super(TokenDropoutWithCorruption, self).__init__()
-        self.dropout = nn.Dropout(p)
+        self.p = p
         self.vocab_size = vocab_size
     
     def forward(self, x):
-        mask = torch.rand(x.size()) > self.p
-        indices = mask.nonzero(as_tuple=True)
-        return torch.where(mask, x, torch.randint_like(x, 0, vocab_size))
+        mask = torch.rand_like(x, dtype = torch.float) > self.p
+        return torch.where(mask, x, torch.randint_like(x, 0, self.vocab_size))
 
 ########################################################################################################
 # Static optimized functions
@@ -940,7 +939,7 @@ class RWKV(L.LightningModule):
         assert H == self.n_channel, f"Got {H} channels, expected {self.n_channel}."
         
         if self.input_corruption > 0.0:
-            x = self.corruption0(x)
+            idx = self.corruption0(idx)
         
         x = sum([self.emb[h](idx[:, :, h]) for h in range(H)])
 
