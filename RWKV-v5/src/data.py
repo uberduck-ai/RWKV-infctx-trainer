@@ -18,7 +18,7 @@ from .dataflow.trie_tokenizer import world_tokenizer_encode
 import numpy as np
 
 # delay pattern
-import .delay_pattern
+from . import delay_pattern
 
 # We have to extract out the prepare function to be "outside the class"
 # else it will not be hashed / serialized properly, and will produce the following error:
