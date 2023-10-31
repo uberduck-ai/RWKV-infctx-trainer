@@ -697,7 +697,7 @@ class RWKV(L.LightningModule):
         if dropout > 0:
             self.drop0 = nn.Dropout(p = dropout)
         if input_corruption > 0:
-            self.corruption0 = TokenDropoutWithCorruption(p = input_corruption)
+            self.corruption0 = TokenDropoutWithCorruption(p = input_corruption, vocab_size = vocab_size)
 
         # load the state, and GC the original cpu copy
         if model_weights != None:
