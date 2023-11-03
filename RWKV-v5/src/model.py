@@ -1105,14 +1105,11 @@ class RWKV(L.LightningModule):
             logits, new_shift_states, new_wkv_states = self(
                 idx, last_shift_states, last_wkv_states)
             
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1), logits.size(2)),
-                                    targets.view(-1, targets.size(2)),
-                                    reduction="none", ignore_index=self.padding_idx)
-            loss_weighting = torch.tensor([
-                self.loss_weighting_exponent ** (i % (self.n_channel // self.loss_weighting_groups))
-                for i in range(self.n_channel)
-            ], device=logits.device)
-            loss = loss * loss_weighting
+            loss = torch.stack([F.cross_entropy(logits[:, :, h].view(-1, logits.size(-1)),
+                                                 targets[:, :, h].view(-1),
+                                                 reduction="none", ignore_index=self.padding_idx)
+                    * self.loss_weighting_exponent ** (h % (H // self.loss_weighting_groups))
+                    for h in range(H)], dim=-1)
             loss = loss.view(-1)
 
             submask = mask.view(-1)[:loss.shape[0]]
