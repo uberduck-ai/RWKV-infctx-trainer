@@ -1542,8 +1542,9 @@ class SimpleRWKV():
     def sample_logits(
             self, logits, 
             prv_tokens=[0], 
-            temperature=1.0, top_p=0.9,
-            token_ban: list = []
+            temperature=1.0, top_p=None, top_k=None,
+            token_ban: list = [],
+            rng: torch.Generator = None,
             ):
         # Copy to CPU first
         logits = logits.cpu()
@@ -1569,16 +1570,20 @@ class SimpleRWKV():
                 probs = F.softmax(l, dim=-1)
                 sorted_probs = torch.sort(probs, descending=True)[0]
                 cumulative_probs = torch.cumsum(sorted_probs, dim=-1).cpu().numpy()
-                cutoff = float(sorted_probs[np.argmax(cumulative_probs > top_p)])
+                cutoff = 1
+                if top_p:
+                    cutoff = min(cutoff, float(sorted_probs[np.argmax(cumulative_probs > top_p)]))
+                if top_k:
+                    cutoff = min(cutoff, float(sorted_probs[top_k-1]))
                 probs[probs < cutoff] = 0
                 if temperature != 1.0:
                     probs = probs.pow(1.0 / temperature)
-                out.append(torch.multinomial(probs, num_samples=1)[0])
+                out.append(torch.multinomial(probs, num_samples=1, generator=None)[0])
             return torch.Tensor(out)
         else: 
             # Since the tokenizer sample does not support temp==0
             # we handle this case ourself, by fining the top token
-            return torch.argmax(logits, dim=-1).item()
+            return torch.argmax(logits, dim=-1)
 
     # Completion API
     def completion(self, 
