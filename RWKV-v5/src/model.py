@@ -518,6 +518,7 @@ class RWKV(L.LightningModule):
                  n_layer: int = -1,
                  vocab_size: int = -1,
                  n_channel: int = -1,
+                 n_cond_embd: int = -1,
                  # Context length size for the model
                  ctx_len: int = 2048,
                  # Context length schedule
@@ -607,6 +608,10 @@ class RWKV(L.LightningModule):
                     channel_id = int(x.split('.')[1])
                     max_channel_id = max(max_channel_id, channel_id)
             n_channel = max_channel_id + 1
+        
+        if n_cond_embd < 0:
+            if 'cond_linear.weight' in model_weights:
+                n_cond_embd = model_weights['cond_linear.weight'].shape[0]
 
         # Save the various other params for later
         self.ctx_len = ctx_len
@@ -616,6 +621,7 @@ class RWKV(L.LightningModule):
         self.n_layer = n_layer
         self.vocab_size = vocab_size
         self.n_channel = n_channel
+        self.n_cond_embd = n_cond_embd
         self.layerwise_lr = layerwise_lr
         self.grad_cp = grad_cp
         self.lr_init = lr_init
@@ -670,6 +676,9 @@ class RWKV(L.LightningModule):
             nn.Embedding(vocab_size + 1, n_embd, padding_idx=self.padding_idx)
             for _ in range(n_channel)
         ])
+        
+        if n_cond_embd > 0:
+            self.cond_linear = nn.Linear(n_cond_embd, n_embd)
 
         # load(name=f"wkv_{self.ctx_len}_bf16",
         #      sources=[
@@ -932,8 +941,8 @@ class RWKV(L.LightningModule):
         return -1
 
     @TCompileBaseline
-    def forward(self, idx: torch.Tensor, last_shift_states: torch.Tensor = None,
-                last_wkv_states: torch.Tensor = None):
+    def forward(self, idx: torch.Tensor, cond_embd: torch.Tensor = None,
+                last_shift_states: torch.Tensor = None, last_wkv_states: torch.Tensor = None):
         B, T, H = idx.size()
         assert T <= self.ctx_len, "Cannot forward, model ctx_len is exhausted."
         assert H == self.n_channel, f"Got {H} channels, expected {self.n_channel}."
@@ -942,6 +951,8 @@ class RWKV(L.LightningModule):
             idx = self.corruption0(idx)
         
         x = sum([self.emb[h](idx[:, :, h]) for h in range(H)])
+        if self.n_cond_embd > 0 and cond_embd:
+            x += self.cond_linear(cond_embd)
 
         # Handle dropout (input)
         if self.dropout > 0.0:
