@@ -357,88 +357,15 @@ def prepare_data_static(**kargs):
                 return encodeTokens(x['text'])
             
             raise ValueError('Invalid dataset format, must contain either the configured "multi column" or prompt/completion or text')
-        
-        # M
-        def separate_embeddings(x):
-            
 
         # Map the dataset to the tokenizer, removing the old text column
         src_dataset = src_dataset.map(map_tokenizer, batched=False, num_proc=num_cpus)
         
-        # Remove all features, except input_ids, token_type_ids and attention_mask
+        # Remove all features, except input_ids, token_type_ids, attention_mask and extra
         # as the metadata/etc columns may cause problems down the line (when passed to the trainer)
         dataset_features = src_dataset["train"].features
-        dataset_features_to_remove = {k: v for k, v in dataset_features.items() if k not in ["input_ids", "token_type_ids", "attention_mask"]}
+        dataset_features_to_remove = {k: v for k, v in dataset_features.items() if k not in ["input_ids", "token_type_ids", "attention_mask", "extra"]}
         src_dataset = src_dataset.remove_columns(list(dataset_features_to_remove.keys()))
-
-        if kargs["delay_pattern_enable"]:
-            def apply_delay_pattern(x):
-                ret = {}
-                for i in [
-                    ("input_ids", kargs["delay_pattern_padding"]),
-                    ("token_type_ids", 0),
-                    ("attention_mask", 0),
-                ]:
-                    ret[i[0]] = delay_pattern.apply(x[i[0]], kargs["delay_pattern_groups"], i[1])
-                ret['extra'] = x['extra']
-                return ret
-            src_dataset = src_dataset.map(apply_delay_pattern, batched=True, 
-                                        batch_size=kargs["text_rechunk_size"]*10,
-                                        num_proc=num_cpus)
-        
-        # Get the newline token
-        newline_tokenSet = encodeTokens(["\n"])
-
-        # See if rechunking is needed, this is useful mostly for "text" based datasets
-        # where we would need to split them into "digestable" context length sizes 
-        # used for foundation training
-        # ---
-
-        # The rechunking function
-        def rechunk_text(x):
-            # Full Raw values that we will need to "rechunk"
-            full_input_ids = []
-            full_token_type_ids = []
-            full_attention_mask = []
-
-            # Loop through the x input, and build the raw values
-            for i in range(len(x["input_ids"])):
-                # Get the respective values and push them to the 
-                # raw value array, effectively merging the arrays together
-                # with the newline token in between
-                full_input_ids += x["input_ids"][i] + newline_tokenSet["input_ids"][0]
-                full_token_type_ids += x["token_type_ids"][i] + newline_tokenSet["token_type_ids"][0]
-                full_attention_mask += x["attention_mask"][i] + newline_tokenSet["attention_mask"][0]
-            
-            # Total length, and sample count
-            # note that thte "remainder" will be discarded
-            total_len = len(full_input_ids)
-            total_samples = total_len // kargs["text_rechunk_size"]
-
-            # The output arrays
-            out_input_ids = []
-            out_token_type_ids = []
-            out_attention_mask = []
-
-            # Generate the output arrays
-            for i in range(total_samples):
-                # Calculate the start and end of the sample
-                start = i * kargs["text_rechunk_size"]
-                end = start + kargs["text_rechunk_size"]
-
-                # Push the sample to the output arrays
-                out_input_ids.append(full_input_ids[start:end])
-                out_token_type_ids.append(full_token_type_ids[start:end])
-                out_attention_mask.append(full_attention_mask[start:end])
-            
-            # Prepare and return the output object
-            ret = {
-                'input_ids': out_input_ids,
-                'token_type_ids': out_token_type_ids,
-                'attention_mask': out_attention_mask,
-                'extra': x['extra'],
-            }
-            return ret
 
         # Perform rechunking if needed for "text" based datasets
         if kargs["source"] == "text" and kargs["text_rechunk_size"] > 0:
@@ -458,6 +385,36 @@ def prepare_data_static(**kargs):
                 return False
             return True
         src_dataset = src_dataset.filter(dataset_filter, num_proc=num_cpus)
+
+        if kargs["start_padding"]:
+            def apply_start_padding(x):
+                ret = {}
+                for i in [
+                    ("input_ids", kargs["padding_idx"]),
+                    ("token_type_ids", 0),
+                    ("attention_mask", 0),
+                ]:
+                    ret[i[0]] = [i[1] * len(x[i[0]][])] + x[i[0]]
+                ret['extra'] = x['extra']
+                return ret
+            src_dataset = src_dataset.map(apply_start_padding, batched=True, 
+                                        batch_size=kargs["text_rechunk_size"]*10,
+                                        num_proc=num_cpus)
+
+        if kargs["delay_pattern_enable"]:
+            def apply_delay_pattern(x):
+                ret = {}
+                for i in [
+                    ("input_ids", kargs["padding_idx"]),
+                    ("token_type_ids", 0),
+                    ("attention_mask", 0),
+                ]:
+                    ret[i[0]] = delay_pattern.apply(x[i[0]], kargs["delay_pattern_groups"], i[1])
+                ret['extra'] = x['extra']
+                return ret
+            src_dataset = src_dataset.map(apply_delay_pattern, batched=True, 
+                                        batch_size=kargs["text_rechunk_size"]*10,
+                                        num_proc=num_cpus)
         
         # Perform a sort by length
         if kargs["sort_by_length"]:
@@ -559,7 +516,8 @@ class RWKVDataModule(LightningDataModule):
         # other multichannel
         delay_pattern_enable: bool = False,
         delay_pattern_groups: int = 1,
-        delay_pattern_padding: int = 1024,
+        padding_idx: int = 1024,
+        start_padding: bool = True,
     ):
         # Capture the init parameters
         self._init_locals = locals()
