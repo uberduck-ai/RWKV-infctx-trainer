@@ -140,6 +140,19 @@ def prepare_data_static(**kargs):
             # Get the subset of the dataset
             src_dataset["train"] = src_dataset["train"].select(range(offset_val, offset_val + length_val))
         
+        def add_type_and_mask(x):
+            ret = dict(x)
+            for i in [
+                ("token_type_ids", 0),
+                ("attention_mask", 1),
+            ]:
+                if i[0] not in x:
+                    ret[i[0]] = [[i[1] * len(x["input_ids"][0])] * len(x["input_ids"])]
+            return ret
+        src_dataset = src_dataset.map(add_type_and_mask, batched=True, 
+                                      batch_size=kargs["text_rechunk_size"]*10,
+                                      num_proc=num_cpus)
+        
         # Remove all features, except input_ids, token_type_ids, attention_mask and extra
         # as the metadata/etc columns may cause problems down the line (when passed to the trainer)
         dataset_features = src_dataset["train"].features
@@ -161,14 +174,13 @@ def prepare_data_static(**kargs):
 
         if kargs["start_padding"]:
             def apply_start_padding(x):
-                ret = {}
+                ret = dict(x)
                 for i in [
                     ("input_ids", kargs["padding_idx"]),
                     ("token_type_ids", 0),
                     ("attention_mask", 0),
                 ]:
                     ret[i[0]] = [i[1] * len(x[i[0]][])] + x[i[0]]
-                ret['extra'] = x['extra']
                 return ret
             src_dataset = src_dataset.map(apply_start_padding, batched=True, 
                                         batch_size=kargs["text_rechunk_size"]*10,
@@ -176,14 +188,13 @@ def prepare_data_static(**kargs):
 
         if kargs["delay_pattern_enable"]:
             def apply_delay_pattern(x):
-                ret = {}
+                ret = dict(x)
                 for i in [
                     ("input_ids", kargs["padding_idx"]),
                     ("token_type_ids", 0),
                     ("attention_mask", 0),
                 ]:
                     ret[i[0]] = delay_pattern.apply(x[i[0]], kargs["delay_pattern_groups"], i[1])
-                ret['extra'] = x['extra']
                 return ret
             src_dataset = src_dataset.map(apply_delay_pattern, batched=True, 
                                         batch_size=kargs["text_rechunk_size"]*10,
