@@ -41,9 +41,6 @@ def prepare_data_static(**kargs):
 
     # Source data processing
     if kargs["source"] is not None:
-        if kargs["tokenizer"] is None:
-            raise ValueError('Tokenizer must be specified if source is specified')
-        
         # Special handling for binidx
         #--------------------------------
 
