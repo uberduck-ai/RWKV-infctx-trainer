@@ -951,7 +951,7 @@ class RWKV(L.LightningModule):
             idx = self.corruption0(idx)
         
         x = sum([self.emb[h](idx[:, :, h]) for h in range(H)])
-        if self.n_cond_embd > 0 and cond_embd:
+        if self.n_cond_embd > 0 and cond_embd != None:
             x += self.cond_linear(cond_embd)
 
         # Handle dropout (input)
@@ -1042,7 +1042,7 @@ class RWKV(L.LightningModule):
         assert isinstance(seq, torch.Tensor) and seq.ndim == 3
         ori_seq_mask = batch['attention_mask']
         if 'extra' in batch and 'global_embeddings' in batch['extra']:
-            cond_embd = batch['extra']['global_embeddings'][torch.randint(batch['extra']['global_embeddings'].shape[0])]
+            cond_embd = batch['extra']['global_embeddings'][:, torch.randint(batch['extra']['global_embeddings'].shape[0], (1,))[0]]
         else:
             cond_embd = None
 
