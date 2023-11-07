@@ -4,14 +4,15 @@ import torch
 from src.model import RWKV 
 
 def init_model(
-        layers, embedding_size, vocab_size, channels, output_model_path, 
-        skip_if_exists=False, safe_init=False, emb_scale=0.0001
+        layers, embedding_size, conditioning_size, vocab_size, channels,
+        output_model_path, skip_if_exists=False, safe_init=False, emb_scale=0.0001
         # existing_model_path=None
         ):
     # Insert your own function behavior here
     print(f"---- Initializing model ----")
     print(f'No of layers: {layers}')
     print(f'Embedding size: {embedding_size}')
+    print(f'Conditioning embedding size: {conditioning_size}')
     print(f'Output model path: {output_model_path}')
     print(f'Vocab size: {vocab_size}*{channels}')
     print(f'Emb scale: {emb_scale}')
@@ -36,8 +37,8 @@ def init_model(
     # Setup the RWKV model, with the special init_model str
     # this disable the loading of the init model file
     model = RWKV(n_layer=layers, 
-                 n_embd=embedding_size, vocab_size=vocab_size, 
-                 n_channel=channels,
+                 n_embd=embedding_size, n_cond_embd=conditioning_size,
+                 vocab_size=vocab_size, n_channel=channels,
                  load_model=".//<#|=@%!$init_model$!%@=|#>//.",
                  ctx_len=1)
     
@@ -51,7 +52,7 @@ def init_model(
         gain = 1.0
         scale = 1.0
 
-        if "ln_" in n or ".ln" in n or "time_" in n or "_mask" in n or "pos_emb" in n or '.mask.' in n:
+        if "ln_" in n or ".ln" in n or "time_" in n or "_mask" in n or "pos_emb" in n or '.mask.' in n or "cond_linear" in n:
             if 'ln_x.weight' in n:
                 # Special ln_x init
                 layer_scale = (1+int(n.split('.')[1])) / layers
@@ -105,6 +106,7 @@ def main():
     parser = argparse.ArgumentParser(description='CLI tool for model handling')
     parser.add_argument('--n_layer', type=int, help='Number of layers')
     parser.add_argument('--n_embd',  type=int, help='Embedding size')
+    parser.add_argument('--n_cond_embd',  type=int, help='Conditioning embedding size')
     parser.add_argument('--vocab_size', type=str, help="Vocab size for the model as an int, alternativey use 'neox' or 'world' if using their respective tokenizer", default="neox")
     parser.add_argument('--n_channel',  type=int, help='Number of channels')
     parser.add_argument('--skip-if-exists', type=bool, action=argparse.BooleanOptionalAction, default=False, help='Skip the init if the model already exists, enables --safe-init if set')
@@ -128,7 +130,7 @@ def main():
         vocab_size = int(vocab_size)
 
     init_model(
-        args.n_layer, args.n_embd, vocab_size, args.n_channel, args.output_model_path, 
+        args.n_layer, args.n_embd, args.n_cond_embd, vocab_size, args.n_channel, args.output_model_path, 
         skip_if_exists=args.skip_if_exists, safe_init=args.safe_init,
         emb_scale=args.emb_scale
     ) #, args.existing_model_path

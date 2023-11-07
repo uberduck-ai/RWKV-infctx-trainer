@@ -146,9 +146,7 @@ def prepare_data_static(**kargs):
                 if i[0] not in x:
                     ret[i[0]] = [[i[1] * len(x["input_ids"][0])] * len(x["input_ids"])]
             return ret
-        src_dataset = src_dataset.map(add_type_and_mask, batched=True, 
-                                      batch_size=kargs["text_rechunk_size"]*10,
-                                      num_proc=num_cpus)
+        src_dataset = src_dataset.map(add_type_and_mask, num_proc=num_cpus)
         
         # Remove all features, except input_ids, token_type_ids, attention_mask and extra
         # as the metadata/etc columns may cause problems down the line (when passed to the trainer)
@@ -177,13 +175,11 @@ def prepare_data_static(**kargs):
                     ("token_type_ids", 0),
                     ("attention_mask", 0),
                 ]:
-                    ret[i[0]] = [i[1] * len(x[i[0]][])] + x[i[0]]
+                    ret[i[0]] = [[i[1]] * len(x[i[0]][0])] + x[i[0]]
                 return ret
-            src_dataset = src_dataset.map(apply_start_padding, batched=True, 
-                                        batch_size=kargs["text_rechunk_size"]*10,
-                                        num_proc=num_cpus)
+            src_dataset = src_dataset.map(apply_start_padding, num_proc=num_cpus)
 
-        if kargs["delay_pattern_enable"]:
+        if kargs["delay_pattern"]:
             def apply_delay_pattern(x):
                 ret = dict(x)
                 for i in [
@@ -193,9 +189,7 @@ def prepare_data_static(**kargs):
                 ]:
                     ret[i[0]] = delay_pattern.apply(x[i[0]], kargs["delay_pattern_groups"], i[1])
                 return ret
-            src_dataset = src_dataset.map(apply_delay_pattern, batched=True, 
-                                        batch_size=kargs["text_rechunk_size"]*10,
-                                        num_proc=num_cpus)
+            src_dataset = src_dataset.map(apply_delay_pattern, num_proc=num_cpus)
         
         # Perform a sort by length
         if kargs["sort_by_length"]:
@@ -209,13 +203,6 @@ def prepare_data_static(**kargs):
             
             # sort by length (not sorting the columns, just the rows)
             src_dataset = src_dataset.sort("length", reverse=not sort_asc)
-
-        # Perform rechunking after filtering, if source is not a "text" based 
-        # dataset and text_rechunk_force is enabled
-        if kargs["source"] != "text" and kargs["text_rechunk_size"] > 0 and kargs["text_rechunk_force"]:
-            src_dataset = src_dataset.map(rechunk_text, batched=True, 
-                                        batch_size=kargs["text_rechunk_size"]*2,
-                                        num_proc=num_cpus)
 
         # Check if the dataset does not have a test split
         # and if so, perform the split

@@ -515,10 +515,10 @@ class RWKV(L.LightningModule):
                  # Model size settings, which we either
                  # "auto detect", or use the user specified settings
                  n_embd: int = -1,
+                 n_cond_embd: int = -1,
                  n_layer: int = -1,
                  vocab_size: int = -1,
                  n_channel: int = -1,
-                 n_cond_embd: int = -1,
                  # Context length size for the model
                  ctx_len: int = 2048,
                  # Context length schedule
@@ -611,17 +611,17 @@ class RWKV(L.LightningModule):
         
         if n_cond_embd < 0:
             if 'cond_linear.weight' in model_weights:
-                n_cond_embd = model_weights['cond_linear.weight'].shape[0]
+                n_cond_embd = model_weights['cond_linear.weight'].shape[1]
 
         # Save the various other params for later
         self.ctx_len = ctx_len
         self.ctx_len_cutoffs = ctx_len_cutoffs
         self.ctx_len_warmup_steps = ctx_len_warmup_steps
         self.n_embd = n_embd
+        self.n_cond_embd = n_cond_embd
         self.n_layer = n_layer
         self.vocab_size = vocab_size
         self.n_channel = n_channel
-        self.n_cond_embd = n_cond_embd
         self.layerwise_lr = layerwise_lr
         self.grad_cp = grad_cp
         self.lr_init = lr_init
