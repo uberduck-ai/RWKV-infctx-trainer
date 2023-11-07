@@ -253,7 +253,7 @@ class RWKVDataModule(LightningDataModule):
         # ---
         # Tokenizer settings
         # ---
-        tokenizer: str = "neox",
+        tokenizer: str = None,
         autoTokenizer = None,
 
         # Add <|endoftext|> string token to the world tokenizer, at index 0
@@ -295,10 +295,10 @@ class RWKVDataModule(LightningDataModule):
         n_channel: int = 1,
         
         # other multichannel
-        delay_pattern_enable: bool = False,
+        start_padding: bool = True,
+        delay_pattern: bool = False,
         delay_pattern_groups: int = 1,
         padding_idx: int = 1024,
-        start_padding: bool = True,
     ):
         # Capture the init parameters
         self._init_locals = locals()
