@@ -1041,6 +1041,10 @@ class RWKV(L.LightningModule):
         seq = batch['input_ids']
         assert isinstance(seq, torch.Tensor) and seq.ndim == 3
         ori_seq_mask = batch['attention_mask']
+        if 'extra' in batch and 'global_embeddings' in batch['extra']:
+            cond_embd = batch['extra']['global_embeddings'][torch.randint(batch['extra']['global_embeddings'].shape[0])]
+        else:
+            cond_embd = None
 
         # Check if attent mask is set, if not initialize it
         if ori_seq_mask is None or ori_seq_mask.ndim != 3:
@@ -1111,10 +1115,10 @@ class RWKV(L.LightningModule):
         if total_mask_sum == 0:
             return 0
         
-        def checkpointed_step(idx, targets, mask, prev_loss, last_shift_states,
+        def checkpointed_step(idx, cond_embd, targets, mask, prev_loss, last_shift_states,
                               last_wkv_states, prev_steps):
             logits, new_shift_states, new_wkv_states = self(
-                idx, last_shift_states, last_wkv_states)
+                idx, cond_embd, last_shift_states, last_wkv_states)
             
             loss = torch.stack([F.cross_entropy(logits[:, :, h].view(-1, logits.size(-1)),
                                                  targets[:, :, h].view(-1),
@@ -1265,6 +1269,7 @@ class RWKV(L.LightningModule):
                 # Segmented learning, applies the forward/pass over each chunk seperately
                 segment_loss, new_shift_states, new_wkv_states, steps = checkpointed_step(
                     cur_idx,
+                    cond_embd,
                     cur_tar,
                     cur_msk,
                     torch.tensor(0, dtype=self.emb[0].weight.dtype, device=cur_device).requires_grad_(True),
@@ -1347,6 +1352,7 @@ class RWKV(L.LightningModule):
                     total_loss, new_shift_states, new_wkv_states, steps = deepspeed_checkpoint(
                         checkpointed_step,
                         idx[:, i * segment_size:(i + 1) * segment_size],
+                        cond_embd,
                         targets[:, i * segment_size:(i + 1) * segment_size],
                         seq_mask[:, i * segment_size:(i + 1) * segment_size],
                         total_loss,
@@ -1357,6 +1363,7 @@ class RWKV(L.LightningModule):
                 else:
                     total_loss, new_shift_states, new_wkv_states, steps = checkpointed_step(
                         idx[:, i * segment_size:(i + 1) * segment_size],
+                        cond_embd,
                         targets[:, i * segment_size:(i + 1) * segment_size],
                         seq_mask[:, i * segment_size:(i + 1) * segment_size],
                         total_loss,

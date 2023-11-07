@@ -191,7 +191,8 @@ def prepare_data_static(**kargs):
                     return {
                         'input_ids': id_arr,
                         'token_type_ids': type_arr,
-                        'attention_mask': mask_arr
+                        'attention_mask': mask_arr,
+                        'extra': x['extra'],
                     }
                 
                 # Else we encode the string and return it following the HF tokenizer format
@@ -199,7 +200,8 @@ def prepare_data_static(**kargs):
                 return {
                     'input_ids': enc_str,
                     'token_type_ids': [0] * len(enc_str),
-                    'attention_mask': [1] * len(enc_str)
+                    'attention_mask': [1] * len(enc_str),
+                    'extra': x['extra'],
                 }
 
             # We use the HF tokenizer as it is, and get the input_ids
@@ -316,7 +318,8 @@ def prepare_data_static(**kargs):
                     return {
                         'input_ids': input_ids,
                         'token_type_ids': token_type_ids,
-                        'attention_mask': attention_mask
+                        'attention_mask': attention_mask,
+                        'extra': x['extra'],
                     }
 
             # Prompt completion support
@@ -346,6 +349,7 @@ def prepare_data_static(**kargs):
                     'input_ids': input_ids,
                     'token_type_ids': token_type_ids,
                     'attention_mask': attention_mask,
+                    'extra': x['extra'],
                 }
             
             # Fallback to standard text tokenization
@@ -353,6 +357,10 @@ def prepare_data_static(**kargs):
                 return encodeTokens(x['text'])
             
             raise ValueError('Invalid dataset format, must contain either the configured "multi column" or prompt/completion or text')
+        
+        # M
+        def separate_embeddings(x):
+            
 
         # Map the dataset to the tokenizer, removing the old text column
         src_dataset = src_dataset.map(map_tokenizer, batched=False, num_proc=num_cpus)
@@ -362,9 +370,6 @@ def prepare_data_static(**kargs):
         dataset_features = src_dataset["train"].features
         dataset_features_to_remove = {k: v for k, v in dataset_features.items() if k not in ["input_ids", "token_type_ids", "attention_mask"]}
         src_dataset = src_dataset.remove_columns(list(dataset_features_to_remove.keys()))
-        
-        # Get the newline token
-        newline_tokenSet = encodeTokens(["\n"])
 
         if kargs["delay_pattern_enable"]:
             def apply_delay_pattern(x):
@@ -375,10 +380,14 @@ def prepare_data_static(**kargs):
                     ("attention_mask", 0),
                 ]:
                     ret[i[0]] = delay_pattern.apply(x[i[0]], kargs["delay_pattern_groups"], i[1])
+                ret['extra'] = x['extra']
                 return ret
             src_dataset = src_dataset.map(apply_delay_pattern, batched=True, 
                                         batch_size=kargs["text_rechunk_size"]*10,
                                         num_proc=num_cpus)
+        
+        # Get the newline token
+        newline_tokenSet = encodeTokens(["\n"])
 
         # See if rechunking is needed, this is useful mostly for "text" based datasets
         # where we would need to split them into "digestable" context length sizes 
@@ -427,6 +436,7 @@ def prepare_data_static(**kargs):
                 'input_ids': out_input_ids,
                 'token_type_ids': out_token_type_ids,
                 'attention_mask': out_attention_mask,
+                'extra': x['extra'],
             }
             return ret
 
