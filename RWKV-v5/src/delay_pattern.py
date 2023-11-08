@@ -2,7 +2,7 @@ import numpy
 
 def calculate_offsets(size, n_group):
     group_size = size // n_group
-    return [(i % group_size) + (i // group_size) for i in range(size)]
+    return numpy.array([(i % group_size) + (i // group_size) for i in range(size)])
 
 def apply(arr, n_group, padding_idx, cut_end=False):
     # shape = (length, channels)
@@ -58,5 +58,5 @@ def unapply(arr, n_group, padding_idx, cut_start=True, cut_end=True):
     else:
         return orig_type(arr)
 
-def get_mask(n_channel, n_group, step):
-    return [calculate_offsets(i) <= step in range(n_channel)]
+def get_mask(size, n_group, step):
+    return (calculate_offsets(size, n_group) <= step)

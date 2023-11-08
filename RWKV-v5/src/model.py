@@ -951,7 +951,7 @@ class RWKV(L.LightningModule):
             idx = self.corruption0(idx)
         
         x = sum([self.emb[h](idx[:, :, h]) for h in range(H)])
-        if self.n_cond_embd > 0 and cond_embd != None:
+        if self.n_cond_embd > 0 and type(cond_embd) != type(None):
             x += self.cond_linear(cond_embd)
 
         # Handle dropout (input)
@@ -1119,7 +1119,6 @@ class RWKV(L.LightningModule):
                               last_wkv_states, prev_steps):
             logits, new_shift_states, new_wkv_states = self(
                 idx, cond_embd, last_shift_states, last_wkv_states)
-            
             loss = torch.stack([F.cross_entropy(logits[:, :, h].view(-1, logits.size(-1)),
                                                  targets[:, :, h].view(-1),
                                                  reduction="none", ignore_index=self.padding_idx)
@@ -1500,6 +1499,7 @@ class SimpleRWKV():
     # Forwarding logic, withoout torch._no_grad() context
     def _forward(
             self, tokens, 
+            cond_embd = None,
             stateObj = None,
             all_logits = False
         ):
@@ -1531,7 +1531,7 @@ class SimpleRWKV():
             
             # Compute the logits and state
             logits_arr, shift_states, wkv_states = self.model.forward(
-                batch_tokens, shift_states, wkv_states
+                batch_tokens, cond_embd, shift_states, wkv_states
             )
 
             # Build the all_logits array
@@ -1549,12 +1549,13 @@ class SimpleRWKV():
     
     # Forwarding logic, with torch._no_grad() context
     def forward(
-            self, tokens:list, 
+            self, tokens:list,
+            cond_embd = None,
             stateObj = None,
             all_logits = False
         ):
         with torch.no_grad():
-            return self._forward(tokens, stateObj, all_logits)
+            return self._forward(tokens, cond_embd, stateObj, all_logits)
 
     # Sampling logits
     def sample_logits(

@@ -144,7 +144,7 @@ def prepare_data_static(**kargs):
                 ("attention_mask", 1),
             ]:
                 if i[0] not in x:
-                    ret[i[0]] = [[i[1] * len(x["input_ids"][0])] * len(x["input_ids"])]
+                    ret[i[0]] = [[i[1]] * len(x["input_ids"][0])] * len(x["input_ids"])
             return ret
         src_dataset = src_dataset.map(add_type_and_mask, num_proc=num_cpus)
         
