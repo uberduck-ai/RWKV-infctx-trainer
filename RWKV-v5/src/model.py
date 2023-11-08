@@ -3,7 +3,7 @@
 ########################################################################################################
 
 import gc, math, os
-from random import randint
+from random import randint, random
 from typing import List, Optional
 
 import numpy as np
@@ -534,6 +534,7 @@ class RWKV(L.LightningModule):
                  # Dropout rate
                  dropout: float = 0.0,
                  input_corruption: float = 0.0,
+                 cond_dropout: float = 0.0,
                  # Adam optimizer settings
                  beta1: float = 0.9,
                  beta2: float = 0.99,
@@ -630,6 +631,7 @@ class RWKV(L.LightningModule):
         self.lr_period_type = lr_period_type
         self.dropout = dropout
         self.input_corruption = input_corruption
+        self.cond_dropout = cond_dropout
         self.warmup_steps = warmup_steps
         self.loss_weighting_exponent = loss_weighting_exponent
         self.loss_weighting_groups = loss_weighting_groups
@@ -1041,7 +1043,7 @@ class RWKV(L.LightningModule):
         seq = batch['input_ids']
         assert isinstance(seq, torch.Tensor) and seq.ndim == 3
         ori_seq_mask = batch['attention_mask']
-        if 'extra' in batch and 'global_embeddings' in batch['extra']:
+        if 'extra' in batch and 'global_embeddings' in batch['extra'] and len(batch['extra']['global_embeddings']) != 0 and random() < self.cond_dropout:
             cond_embd = batch['extra']['global_embeddings'][:, torch.randint(batch['extra']['global_embeddings'].shape[0], (1,))[0]]
         else:
             cond_embd = None
