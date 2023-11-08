@@ -57,3 +57,6 @@ def unapply(arr, n_group, padding_idx, cut_start=True, cut_end=True):
         return arr
     else:
         return orig_type(arr)
+
+def get_mask(n_channel, n_group, step):
+    return [calculate_offsets(i) <= step in range(n_channel)]
