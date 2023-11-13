@@ -61,7 +61,7 @@ def init_model(
                 # Skip custom init for these layers
                 m[n] = p
         else:
-            if n == "emb.weight":
+            if n in ("emb.weight", "cond_linear.weight"):
                 # scale = -1 * self.args.lr_init
                 scale = -1 * abs(emb_scale)
             else:
