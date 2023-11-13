@@ -52,7 +52,7 @@ def init_model(
         gain = 1.0
         scale = 1.0
 
-        if "ln_" in n or ".ln" in n or "time_" in n or "_mask" in n or "pos_emb" in n or '.mask.' in n or "cond_linear" in n:
+        if "ln_" in n or ".ln" in n or "time_" in n or "_mask" in n or "pos_emb" in n or '.mask.' in n or "":
             if 'ln_x.weight' in n:
                 # Special ln_x init
                 layer_scale = (1+int(n.split('.')[1])) / layers
@@ -61,7 +61,7 @@ def init_model(
                 # Skip custom init for these layers
                 m[n] = p
         else:
-            if n in ("emb.weight", "cond_linear.weight"):
+            if n.startswith("emb.") or n.startswith("cond_linear."):
                 # scale = -1 * self.args.lr_init
                 scale = -1 * abs(emb_scale)
             else:
@@ -77,10 +77,10 @@ def init_model(
                 if "head_q." in n:
                     scale = 0
 
-            print(f"{str(shape[0]).ljust(5)} {str(shape[1]).ljust(5)} {str(scale).ljust(4)} {n}")
+            print(f"{str(shape[0]).ljust(5)} {str(shape[1] if len(shape) > 1 else 1).ljust(5)} {str(scale).ljust(4)} {n}")
 
             # Reinitialize as empty params
-            m[n] = torch.empty((shape[0], shape[1]))
+            m[n] = torch.empty(shape)
             # With the specified vlaue ranges
             if scale == 0:
                 nn.init.zeros_(m[n])
