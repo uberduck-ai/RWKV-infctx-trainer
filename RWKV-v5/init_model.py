@@ -52,16 +52,18 @@ def init_model(
         gain = 1.0
         scale = 1.0
 
-        if "ln_" in n or ".ln" in n or "time_" in n or "_mask" in n or "pos_emb" in n or '.mask.' in n or "":
+        if "ln_" in n or ".ln" in n or "time_" in n or "_mask" in n or "pos_emb" in n or '.mask.' in n or "cond_linear." in n:
             if 'ln_x.weight' in n:
                 # Special ln_x init
                 layer_scale = (1+int(n.split('.')[1])) / layers
                 m[n] = (p * 0.0) + (layer_scale ** 0.7)
+            elif "cond_linear." in n:
+                m[n] = p * abs(emb_scale)
             else:
                 # Skip custom init for these layers
                 m[n] = p
         else:
-            if n.startswith("emb.") or n.startswith("cond_linear."):
+            if n.startswith("emb."):
                 # scale = -1 * self.args.lr_init
                 scale = -1 * abs(emb_scale)
             else:
@@ -77,7 +79,7 @@ def init_model(
                 if "head_q." in n:
                     scale = 0
 
-            print(f"{str(shape[0]).ljust(5)} {str(shape[1] if len(shape) > 1 else 1).ljust(5)} {str(scale).ljust(4)} {n}")
+            print(f"{str(shape[0]).ljust(5)} {str(shape[1]} {str(scale).ljust(4)} {n}")
 
             # Reinitialize as empty params
             m[n] = torch.empty(shape)
