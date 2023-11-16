@@ -79,7 +79,7 @@ def init_model(
                 if "head_q." in n:
                     scale = 0
 
-            print(f"{str(shape[0]).ljust(5)} {str(shape[1]} {str(scale).ljust(4)} {n}")
+            print(f"{str(shape[0]).ljust(5)} {str(shape[1])} {str(scale).ljust(4)} {n}")
 
             # Reinitialize as empty params
             m[n] = torch.empty(shape)
