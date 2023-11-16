@@ -139,12 +139,10 @@ def prepare_data_static(**kargs):
         
         def add_type_and_mask(x):
             ret = dict(x)
-            for i in [
-                ("token_type_ids", 0),
-                ("attention_mask", 1),
-            ]:
-                if i[0] not in x:
-                    ret[i[0]] = [[i[1]] * len(x["input_ids"][0])] * len(x["input_ids"])
+            if "token_type_ids" not in x:
+                ret["token_type_ids"] = [[0] * len(x["input_ids"][0])] * len(x["input_ids"])
+            if "attention_mask" not in x:
+                ret["attention_mask"] = [[0 if c == kargs["padding_idx"] else 1 for c in t] for t in x["input_ids"]]
             return ret
         src_dataset = src_dataset.map(add_type_and_mask, num_proc=num_cpus)
         
