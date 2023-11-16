@@ -535,6 +535,7 @@ class RWKV(L.LightningModule):
                  dropout: float = 0.0,
                  input_corruption: float = 0.0,
                  cond_dropout: float = 0.0,
+                 random_chop_prob: float = 0.0,
                  # Adam optimizer settings
                  beta1: float = 0.9,
                  beta2: float = 0.99,
@@ -632,6 +633,7 @@ class RWKV(L.LightningModule):
         self.dropout = dropout
         self.input_corruption = input_corruption
         self.cond_dropout = cond_dropout
+        self.random_chop_prob = random_chop_prob
         self.warmup_steps = warmup_steps
         self.loss_weighting_exponent = loss_weighting_exponent
         self.loss_weighting_groups = loss_weighting_groups
@@ -1040,6 +1042,11 @@ class RWKV(L.LightningModule):
     # Main compute_loss function, this is called by the trainer loop
     #
     def compute_loss(self, batch, batch_idx, is_training_run: bool):
+        if self.random_chop_prob > 0.0 and random() < self.random_chop_prob:
+            if len(batch['input_ids']) > self.ctx_len:
+                random_chop_start = randint(0, batch['input_ids'] - self.ctx_len)
+                for i in ('input_ids', 'attention_mask'): # [NOTE] token_type_ids is unused?
+                    batch[i] = batch[i][random_chop_start:(random_chop_start + self.ctx_len)]
         seq = batch['input_ids']
         assert isinstance(seq, torch.Tensor) and seq.ndim == 3
         ori_seq_mask = batch['attention_mask']
