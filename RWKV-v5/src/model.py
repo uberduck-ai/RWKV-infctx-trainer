@@ -535,6 +535,7 @@ class RWKV(L.LightningModule):
                  dropout: float = 0.0,
                  input_corruption: float = 0.0,
                  cond_dropout: float = 0.0,
+                 cond_embd_start_only: bool = False,
                  random_chop_prob: float = 0.0,
                  # Adam optimizer settings
                  beta1: float = 0.9,
@@ -956,7 +957,10 @@ class RWKV(L.LightningModule):
         
         x = sum([self.emb[h](idx[:, :, h]) for h in range(H)])
         if self.n_cond_embd > 0 and type(cond_embd) != type(None):
-            x += self.cond_linear(cond_embd)
+            if cond_embd_start_only:
+                x[0] += self.cond_linear(cond_embd)
+            else:
+                x += self.cond_linear(cond_embd)
 
         # Handle dropout (input)
         if self.dropout > 0.0:
