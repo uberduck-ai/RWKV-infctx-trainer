@@ -958,9 +958,9 @@ class RWKV(L.LightningModule):
         x = sum([self.emb[h](idx[:, :, h]) for h in range(H)])
         if self.n_cond_embd > 0 and type(cond_embd) != type(None):
             if cond_embd_start_only:
-                x[0] += self.cond_linear(cond_embd)
+                x[:, 0] += self.cond_linear(cond_embd)
             else:
-                x += self.cond_linear(cond_embd)
+                x += self.cond_linear(cond_embd).unsqueeze(1)
 
         # Handle dropout (input)
         if self.dropout > 0.0:
@@ -1542,9 +1542,14 @@ class SimpleRWKV():
                 dtype=torch.long, device=self.device
             ).unsqueeze(0)
             
+            batch_cond_embd = torch.tensor(
+                cond_embd,
+                dtype=torch.float, device=self.device
+            ).unsqueeze(0)
+            
             # Compute the logits and state
             logits_arr, shift_states, wkv_states = self.model.forward(
-                batch_tokens, cond_embd, shift_states, wkv_states
+                batch_tokens, batch_cond_embd, shift_states, wkv_states
             )
 
             # Build the all_logits array
