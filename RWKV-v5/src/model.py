@@ -1047,10 +1047,11 @@ class RWKV(L.LightningModule):
     #
     def compute_loss(self, batch, batch_idx, is_training_run: bool):
         if self.random_chop_prob > 0.0 and random() < self.random_chop_prob:
-            if len(batch['input_ids']) > self.ctx_len:
-                random_chop_start = randint(0, batch['input_ids'] - self.ctx_len)
-                for i in ('input_ids', 'attention_mask'): # [NOTE] token_type_ids is unused?
-                    batch[i] = batch[i][random_chop_start:(random_chop_start + self.ctx_len)]
+            for item in range(len(batch['input_ids'])):
+                if len(batch[i]) > self.ctx_len:
+                    random_chop_start = randint(0, batch[i]['input_ids'] - self.ctx_len)
+                    for j in ('input_ids', 'attention_mask'): # [NOTE] token_type_ids is unused?
+                        item[i][j] = item[i][j][random_chop_start:(random_chop_start + self.ctx_len)]
         seq = batch['input_ids']
         assert isinstance(seq, torch.Tensor) and seq.ndim == 3
         ori_seq_mask = batch['attention_mask']
