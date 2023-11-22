@@ -1046,7 +1046,7 @@ class RWKV(L.LightningModule):
     # Main compute_loss function, this is called by the trainer loop
     #
     def compute_loss(self, batch, batch_idx, is_training_run: bool):
-        if (random_chop_prob == 1.0) or (self.random_chop_prob > 0.0 and random() < self.random_chop_prob):
+        if (self.random_chop_prob == 1.0) or (self.random_chop_prob > 0.0 and random() < self.random_chop_prob):
             for i in range(len(batch['input_ids'])):
                 if len(batch['input_ids'][i]) > self.ctx_len:
                     random_chop_start = randint(0, len(batch['input_ids'][i]) - self.ctx_len)
