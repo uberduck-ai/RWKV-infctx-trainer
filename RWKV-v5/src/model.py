@@ -635,6 +635,8 @@ class RWKV(L.LightningModule):
         self.dropout = dropout
         self.input_corruption = input_corruption
         self.cond_dropout = cond_dropout
+        self.cond_embd_start_only = cond_embd_start_only
+        self.cond_embd_normalize = cond_embd_normalize
         self.random_chop_prob = random_chop_prob
         self.warmup_steps = warmup_steps
         self.loss_weighting_exponent = loss_weighting_exponent
@@ -958,7 +960,7 @@ class RWKV(L.LightningModule):
         
         x = sum([self.emb[h](idx[:, :, h]) for h in range(H)])
         if self.n_cond_embd > 0 and cond_embd != None:
-            if cond_embd_start_only:
+            if self.cond_embd_start_only:
                 x[:, 0] += self.cond_linear(cond_embd)
             else:
                 x += self.cond_linear(cond_embd).unsqueeze(1)
