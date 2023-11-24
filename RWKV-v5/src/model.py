@@ -1057,7 +1057,7 @@ class RWKV(L.LightningModule):
         ori_seq_mask = batch['attention_mask']
         if 'extra' in batch and 'global_embeddings' in batch['extra'] and len(batch['extra']['global_embeddings']) != 0 and random() < self.cond_dropout:
             cond_embd = batch['extra']['global_embeddings'][:, torch.randint(batch['extra']['global_embeddings'].shape[0], (1,))[0]]
-            if cond_embd_normalize:
+            if self.cond_embd_normalize:
                 cond_embd = F.normalize(cond_embd)
         else:
             cond_embd = None
