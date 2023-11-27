@@ -963,7 +963,7 @@ class RWKV(L.LightningModule):
             if self.cond_embd_start_only:
                 x[:, 0] += self.cond_linear(cond_embd)
             else:
-                x += self.cond_linear(cond_embd).unsqueeze(1)
+                x += self.cond_linear(cond_embd)
 
         # Handle dropout (input)
         if self.dropout > 0.0:
